@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+from orion.core.http_executor import run
+import argparse
+import os
+import importlib
+import yaml
+import sys
+
+curr_dir = os.path.abspath(os.path.curdir)
+
+# config stuff
+parser = argparse.ArgumentParser(
+    description='performance test framework executor')
+parser.add_argument('--directory', '-d', nargs='?', type=str, default='.',
+                    help='specify filedirectory, default current work directory')
+parser.add_argument('--config', '-c', nargs='?', type=str, default='config.yaml',
+                    help='config yaml location')
+parser.add_argument('--env', '-e', nargs='?', type=str,
+                    help='running environment', required=True)
+args = parser.parse_args()
+fd = args.directory
+config = args.config
+env = args.env
+test_files = []
+if os.path.isfile(fd):
+    files = [fd]
+elif os.path.isdir(fd):
+    for root, _, files in os.walk(fd):
+        test_files += [os.path.abspath(root + '/' + file) for file in files if os.path.splitext(
+            os.path.abspath(root + '/' + file))[1] == '.yaml' or
+                       os.path.splitext(os.path.abspath(root + '/' + file))[1] == '.yml']
+sys.path.append(os.path.realpath(os.path.curdir))
+if not test_files:
+    raise FileNotFoundError('Test suites not found')
+test_files.remove(os.path.abspath(config))
+
+
+class Orion(object):
+    def run(self):
+        for file in test_files:
+            if os.path.exists(os.path.splitext(
+                    file)[0] + f'_{env}.py'):
+                container = importlib.import_module(os.path.splitext(
+                    file)[0].replace(curr_dir, '')[1:].replace('/', '.') + f'_{env}')
+            else:
+                container = self
+            with open(config, encoding='utf-8') as conf:
+                conf_yaml = yaml.load(conf.read())
+                setattr(container, 'pegasus_hosts', conf_yaml['pegasus_hosts'])
+                [setattr(container, k, v) for k, v in conf_yaml[env].items()]
+            run(file, container, env)
+
+
+if __name__ == '__main__':
+    Orion().run()
